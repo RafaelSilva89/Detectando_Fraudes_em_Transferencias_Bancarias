@@ -1,293 +1,275 @@
-# Detectando Fraudes em Transferências Bancárias
-Este repositório contém script de uma máquina preditiva de detecção de transferências fraudulentas
+# 🕵️ Detectando Fraudes em Transferências Bancárias
+
+**Um modelo que coloca as transações suspeitas no topo da fila, e uma regra de decisão escolhida pelo custo em reais.**
 
 <div align="center">
-<img src="https://media4.giphy.com/media/RDZo7znAdn2u7sAcWH/giphy.gif" width="350px">
+<img src="https://media4.giphy.com/media/RDZo7znAdn2u7sAcWH/giphy.gif" width="300px">
 </div>
-</br>
 
+**Python · scikit-learn · XGBoost · LightGBM · imbalanced-learn · Streamlit · CRISP-DM**
 
-# _Objetivo do projeto_
+| 📊 Destaques | |
+|---|---|
+| Base | **283.726 transações** em 2 dias (sem duplicatas), só **473 fraudes (0,17%)** |
+| Resultado no teste | Revisando **132** das 56.746 transações (0,23%), o modelo barra **78 das 95 fraudes (82%)** e **82,3% do valor fraudado** |
+| Em reais | **R$ 12.154,24** barrados com R$ 660 em revisões: economia líquida de **R$ 11.494,24** (intervalo de 95%: R$ 6.255 a R$ 17.940) |
+| Modelo | **XGBoost** com peso da classe, PR-AUC de **0,817** no teste (o acaso daria 0,002). Regra de decisão escolhida pelo menor custo: limiar de **0,11**, ou de **0,005** para transações acima de **R$ 200** |
+| Entrega | Notebook CRISP-DM + modelo e ficha em `Model/` + **app Streamlit** com explicação SHAP + **16 testes automatizados** (com CI) |
 
-<img src="Imagens/Capa2.png" width="150px" align='right'>
+---
 
-<p align = 'left'>
+## 📑 Sumário
 
-O objetivo deste projeto é desenvolver um modelo preditivo capaz de detectar transações fraudulentas em uma Instituição Financeira, utilizando técnicas de ciência de dados.
-<p>
+1. [Contexto do problema](#1-contexto-do-problema)
+2. [Objetivo](#2-objetivo)
+3. [Base de dados](#3-base-de-dados)
+4. [Estrutura do projeto](#4-estrutura-do-projeto)
+5. [Como executar](#5-como-executar)
+6. [Etapas do projeto (CRISP-DM)](#6-etapas-do-projeto-crisp-dm)
+7. [Principais descobertas da EDA](#7-principais-descobertas-da-eda)
+8. [Construção da solução](#8-construção-da-solução)
+9. [Resultado do modelo](#9-resultado-do-modelo)
+10. [App interativo (Streamlit)](#10-app-interativo-streamlit)
+11. [O que mudou da v1 para a v2](#11-o-que-mudou-da-v1-para-a-v2)
+12. [Insights](#12-insights)
+13. [Limites](#13-limites)
+14. [Próximos passos](#14-próximos-passos)
 
-<br>
+---
 
-# _1. Problema de Negócio_
+## 1. Contexto do problema
 
-Neste conjunto de dados fictício possui transações de transferências entre contas de uma mesma Instituição Financeira. São mais de 200 mil registros de transferências, sendo 490 Fraudulentas, ou seja, não foram realizadas pelo dono da conta corrente.
+Golpes em transações pela internet crescem todo ano no Brasil. Para um banco, cada fraude que passa é **dinheiro perdido**, e cada transação legítima bloqueada por engano é **custo de atendimento** e atrito com o cliente. Como as fraudes são raríssimas (menos de 2 em cada mil transações), revisar tudo é inviável, e revisar ao acaso não encontra quase nada.
 
-Temos 28 variáveis explicativas e a variável Classe é o Target e assume o valor 1 em caso de fraude e 0 em caso contrário.
+## 2. Objetivo
 
-Golpe em dados bancários pela internet cresceu 43% no Brasil.
+> **Pergunta de negócio:** *Quantas fraudes, e quanto dinheiro, o banco consegue barrar revisando só as transações que o modelo marcar? Qual o custo dessas revisões?*
 
-Fonte: https://economia.ig.com.br/2020-07-28/golpe-em-dados-bancarios-pela-internet-cresceu-43-no-brasil-saiba-se-proteger.html
+## 3. Base de dados
 
-O problema de negócio consiste na ocorrência de transferências fraudulentas entre contas de uma mesma Instituição Financeira, o que pode causar prejuízos financeiros tanto para a instituição quanto para seus clientes.
+**284.807 transações** feitas em **48 horas**, com **492 fraudes**. A base é o conjunto público *Credit Card Fraud Detection* (Universidade Livre de Bruxelas, no Kaggle) com as colunas renomeadas, e fica em `Datasets/transferencias.zip` (68,5 MB).
 
-Esse conjunto de dados fictício possui transações de transferências entre contas de uma mesma Instituição Financeira.
+> ⚠️ **As colunas não são o que os nomes dizem.** "valor", "antecedentes", "empréstimos", "país" etc. são **28 componentes PCA anônimas** (V1 a V28): combinações matemáticas das variáveis originais, que o banco não divulgou. As únicas variáveis com significado são:
+>
+> | Coluna | O que é |
+> |---|---|
+> | `hist_saldo` | **Valor da transação** |
+> | `Timestamp` | Segundos desde a 1ª transação (janela de 48 h) |
+> | `Target` | 1 = fraude, 0 = legítima |
 
-<br>
+## 4. Estrutura do projeto
 
-# _2. Justificativa_
+```
+Detectando_Fraudes_em_Transferencias_Bancarias/
+├── .github/workflows/testes.yml           # roda os testes a cada push (GitHub Actions)
+├── Datasets/
+│   └── transferencias.zip                 # base completa (CSV compactado)
+├── Imagens/                               # gráficos gerados pelos notebooks
+├── Model/
+│   ├── modelo_fraude.pkl                  # pipeline final (XGBoost) + limiar + colunas
+│   ├── modelo_fraude.json                 # ficha do modelo: limiar, métricas, hiperparâmetros, avisos
+│   └── Modelo_Random_Forest_v01.pkl       # modelo da versão original
+├── Notebooks/
+│   ├── Detectando Fraudes em Transferências Bancárias.ipynb        # versão original
+│   └── Detectando Fraudes em Transferências Bancárias - v2.ipynb   # versão reorganizada (CRISP-DM)
+├── docs/
+│   └── decisoes_analiticas.md             # registro das decisões do projeto (DA-01 a DA-12)
+├── reports/
+│   ├── comparacao_modelos.csv             # métricas de todos os modelos na validação
+│   ├── previsoes_teste.csv                # probabilidades do teste (usadas pelo app)
+│   └── amostra_transacoes.csv             # 50 transações do teste para o app
+├── src/
+│   ├── config.py                          # caminhos, semente e premissas de custo
+│   ├── dados.py                           # leitura, significado das colunas, duplicatas e hora do dia
+│   ├── estatistica.py                     # testes das hipóteses (com tamanho de efeito) e regra do IQR
+│   ├── selecao.py                         # Random Forest e Informação Mútua
+│   ├── avaliacao.py                       # métricas, limiar, regra de valor, custo em reais, bootstrap, PSI e ficha do modelo
+│   ├── explicacao.py                      # valores SHAP de cada previsão (pelo próprio XGBoost)
+│   └── graficos.py                        # funções de gráficos
+├── tests/
+│   ├── test_funcoes.py                    # testes das funções de src/
+│   └── test_app.py                        # abre o app e confere os indicadores (AppTest)
+├── app.py                                 # app Streamlit
+├── pytest.ini
+├── requirements.txt
+└── README.md
+```
 
-- **Por quê:** A implementação desse projeto é importante devido ao crescente aumento de golpes e fraudes em transações bancárias pela internet, como evidenciado no artigo citado que aponta um aumento de 43% nesse tipo de golpe no Brasil. A detecção e prevenção de transferências fraudulentas são essenciais para garantir a segurança das transações e proteger os clientes da Instituição Financeira.
-- **Como:** Através da construção de um modelo preditivo de detecção de fraudes utilizando algoritmos de classificação, será possível identificar padrões e características que distinguem as transações fraudulentas das legítimas. Esse modelo poderá ser integrado ao sistema de detecção de fraudes da instituição, auxiliando na tomada de decisões e na redução dos prejuízos causados por atividades fraudulentas.
-- **O quê:** A solução proposta consiste em desenvolver um modelo preditivo capaz de classificar as transações como fraudulentas ou não fraudulentas. O modelo será treinado com base nos dados históricos de transações e poderá ser utilizado em tempo real para avaliar a autenticidade de novas transações.
+## 5. Como executar
 
-<br>
+```bash
+# 1. Clonar o repositório
+git clone https://github.com/RafaelSilva89/Detectando_Fraudes_em_Transferencias_Bancarias.git
+cd Detectando_Fraudes_em_Transferencias_Bancarias
 
-# _3. Premissas_
+# 2. Instalar as dependências
+pip install -r requirements.txt
 
-As variáveis originais do conjuto de dados são:<br>
+# 3. Abrir o notebook (a execução completa leva cerca de 40 minutos)
+jupyter notebook "Notebooks/Detectando Fraudes em Transferências Bancárias - v2.ipynb"
 
-Variável | Definição
------------- | -------------
-Timestamp | Data e hora da transferência bancária.|
-País | País onde a transferência foi feita.
-Cidade | Cidade onde a transferência foi feita.
-Bairro | Bairro onde a transferência foi feita.
-CEP | Código postal do local da transferência.
-IP | Endereço IP do dispositivo que iniciou a transferência.
-Dia | Dia do mês em que a transferência foi feita.
-Hora | Hora do dia em que a transferência foi feita.
-Minuto | Minuto da hora em que a transferência foi feita.
-SO | Sistema operacional do dispositivo que iniciou a transferência (por exemplo, Windows, Linux, Mac OS).
-Valor | Valor da transferência em reais.
-Antecedentes | Número de antecedentes criminais do proprietário da conta bancária.
-Reclamações | Número de reclamações registradas contra a conta bancária.
-Qtd_trans | Número de transferências realizadas pela conta bancária.
-CRT | Crédito bancário.
-Limite_global | Limite de crédito global.
-Tipo_crt | Tipo de crédito (por exemplo, pessoal, consignado).
-Estabelecimento | Nome do estabelecimento onde a transferência foi feita.
-Contas | Número de contas vinculadas à conta bancária.
-Empréstimos | Número de empréstimos concedidos à conta bancária.
-Navegador | Navegador da web usado para iniciar a transferência.
-Android | Versão do sistema operacional Android (se o dispositivo que iniciou a transferência for um dispositivo Android).
-iOS | Versão do sistema operacional iOS (se o dispositivo que iniciou a transferência for um dispositivo iOS).
-Compras | Número de compras realizadas pela conta bancária.
-Hist_navegacao | Histórico de navegação da web do dispositivo que iniciou a transferência.
-Relacionamento | Tempo de relacionamento com a instituição financeira.
-Ind_seguranca | Nível de segurança da transação bancária.
-Tempo_transacao | Tempo de duração da transação bancária.
-Lim_crt | Limite de crédito da conta bancária.
-Hist_saldo | Histórico de saldo da conta bancária.
-Target | Variável alvo que indica se a transação bancária é fraudulenta (1) ou não (0).
+# 4. Abrir o app
+streamlit run app.py
 
-Nesta base de dados já foi feito um tratamento anterior de codificação das variáveis, então essa base está pré-processada e podemos focar em Machine Learning.
+# 5. Rodar os testes
+pytest
+```
 
-<br>
+## 6. Etapas do projeto (CRISP-DM)
 
-# _4. Planejamento da Solução_
+| Fase | O que foi feito |
+|---|---|
+| **01. Entendimento do negócio** | Pergunta, métrica (PR-AUC) e custo de cada tipo de erro |
+| **02. Preparação dos dados** | Significado real das colunas, remoção de 1.081 duplicatas, outliers pelo IQR, 6 hipóteses com testes estatísticos e criação da hora do dia |
+| **03. Modelagem** | Separação 60/20/20 estratificada, peso da classe x SMOTE, seleção de variáveis, 4 algoritmos, validação cruzada, ajuste fino pela PR-AUC, **limiar pelo custo em reais**, calibração, **regra complementar para valores altos** e teste anti-vazamento |
+| **04. Avaliação** | Teste aberto uma única vez: métricas, resultado em reais, **intervalos de confiança (bootstrap)**, **validação temporal**, erros por valor e horário, importância por permutação e **SHAP** |
+| **05. Implantação** | Modelo e ficha em `Model/`, simulação, curva "fraudes encontradas x transações revisadas" e **monitoramento de deriva (PSI)** |
 
-0. **ENTENDIMENTO DO NEGÓCIO**
-<p>Definição do problema: É importante definir claramente qual é o problema a ser resolvido ou a pergunta a ser respondida. É preciso entender o objetivo do projeto e a relevância do problema.</p>
+## 7. Principais descobertas da EDA
 
-    - Descrição do negócio
-    - Planejamento da solução
-
-1. **IMPORTANDO AS BIBLIOTECAS**
-<p>Importação de bibliotecas: Nesta etapa, as bibliotecas necessárias para o desenvolvimento do modelo de machine learning são importadas. Isso inclui bibliotecas para manipulação de dados, visualização, modelagem e avaliação.</p>
-
-2. **COLETA DOS DADOS**
-<p>Coleta de dados: Nesta etapa, os dados são coletados a partir de diversas fontes, como bases de dados, APIs, arquivos de texto, imagens, etc.</p>
-
-3. **FUNÇÕES AUXILIARES**
-<p>Funções auxiliares: Nesta etapa, são criadas funções que serão utilizadas ao longo do projeto para realizar tarefas específicas, como limpeza de dados, visualização de gráficos, pré-processamento, entre outros.</p>
-
-4. **ANÁLISE EXPLORATÓRIA DOS DADOS**
-<p>Análise exploratória de dados: Nesta etapa, os dados são analisados para identificar possíveis padrões, tendências, correlações e informações relevantes que possam auxiliar na construção do modelo de machine learning. É importante entender os dados coletados, avaliar a qualidade dos dados e identificar quaisquer problemas ou limitações.</p>
-
-    - **Passo 1:** Análise Descritiva dos Dados
-        - Esta etapa consiste na descrição estatística dos dados coletados, como média, mediana, desvio padrão, entre outros.
-    - **Passo 2:** Exploração de Dados
-        - Nesta etapa, os dados são visualizados e analisados graficamente para identificar padrões e relações entre as variáveis.    
-
-5. **PRÉ-PROCESSAMENTO**
-<p>Preparação de dados ou Pré-processamento de dados: Nesta etapa, os dados são limpos, transformados e preparados para serem utilizados no modelo de machine learning. Isto inclui tarefas como normalização, codificação, preenchimento de valores ausentes, remoção de outliers, etc.</p>
-<p>Divisão dos dados em conjuntos de treinamento e teste: Nesta etapa, os dados são divididos em conjuntos de treinamento e teste para avaliar o desempenho do modelo.</p>
-
-6. **TREINAMENTO ALGORITMOS DE MACHINE LEARNING**
-<p>Modelagem ou Seleção do modelo: Nesta etapa, um modelo de machine learning é escolhido com base na tarefa a ser realizada e nos dados disponíveis.</p>
-<p>Treinamento do modelo: Nesta etapa, o modelo é treinado utilizando o conjunto de treinamento.</p>
-
-7. **AJUSTE FINO DE HIPERPARÂMETROS**
-<p>Avaliação de modelo: Nesta etapa, o modelo é avaliado utilizando o conjunto de teste para verificar a sua capacidade de generalização para dados não vistos durante o treinamento.</p>
-
-8. **AVALIAÇÃO DO ALGORITMO**
-<p>Avaliação do modelo: Nesta etapa, o desempenho do modelo é avaliado utilizando métricas adequadas para o tipo de problema e modelo utilizado, como acurácia, precisão, recall, F1-score, entre outras.</p>
-
-9. **IMPLEMENTAR O MODELO PARA A PRODUÇÃO**
-<p>Implantação: Nesta etapa, o modelo é implantado em um ambiente de produção para utilização em situações reais para resolver o problema.</p>
-
-10. **INSIGHTS**
-<p>Nesta etapa, são identificadas as principais descobertas e conclusões do projeto.</p>
-
-11. **PRÓXIMOS PASSOS**
-<p>Nesta etapa, são definidos os próximos passos a serem tomados com base nos resultados obtidos e nos insights identificados. Isso pode incluir melhorias no modelo existente, coleta de mais dados, exploração de diferentes modelos, entre outros.</p>
-
-<br>
-
-# _5. Insights_
-
-*Resumo dos insights durante análise exploratória de dados (EDA):*
-
-**1º Tabela: Analisando o valor da transferência em reais**
+**A fraude é mais comum de madrugada**
 
 <div align="center">
-<img src="Imagens/VariavelAlvo.PNG" width="200px">
+<img src="Imagens/Fraude%20por%20hora.png" width="850px">
 </div>
-</br>
 
-**Nota:**
-- A média dos valores para transações que não são fraude é zero, enquanto que para transações fraudulentas a média é de -5.
-  - Isso indica que os valores das transações fraudulentas tendem a ser menores do que os valores das transações que não são fraude. A diferença média pode sugerir que os fraudadores estão tentando realizar transações menores para evitar detecção e tornar as transações mais difíceis de serem rastreadas.
-- O desvio padrão maior para transações fraudulentas.
-  - Pode indicar maior variação nos valores das transações fraudulentas, ou seja, alguns fraudadores podem tentar realizar transações maiores enquanto outros optam por transações menores.
-- Essas informações podem ser úteis na construção de modelos preditivos para detectar fraudes em transações financeiras.
-- Além disso, a maior variabilidade nos valores das transações fraudulentas pode indicar que os fraudadores têm diferentes estratégias para obter lucro, o que resulta em valores variados.
+- Entre 0 h e 6 h, a taxa de fraude é de **0,482%**, contra **0,138%** no resto do dia: a chance é **3,5 vezes** maior.
 
-**2º Tabela: Número de empréstimos concedidos à conta bancária**
+**Algumas componentes separam fortemente as fraudes**
 
 <div align="center">
-<img src="Imagens/VariavelEmprestimo.PNG" width="200px">
+<img src="Imagens/Top%203%20componentes.png" width="850px">
 </div>
-</br>
 
-**Nota:**
+- **13 das 28** componentes separam as fraudes com efeito grande; nas melhores (`crt`, `cep`, `reclamacoes`), as duas classes quase não se sobrepõem.
 
-- O desvio padrão (std) é 0 para transações não fraudulentas e 1 para fraudulentas.
-  - Isso sugere que a maioria das transações não envolve empréstimos concedidos à conta bancária, mas para as transações fraudulentas, há alguma variabilidade nas observações.
-- O valor mínimo (min) para transações que não são fraude é -7, enquanto para transações fraudulentas é -3.
-  - Indica que houve casos em que empréstimos foram concedidos à conta bancária em transações tanto de fraude quanto não fraude.
-- O terceiro quartil (75%) é 1 para transações fraudulentas.
-  - O que indica que pelo menos 75% das observações fraudulentas envolvem um empréstimo concedido à conta bancária.
+**Outros achados**
+- **Valor zero é suspeito:** 1,38% das transações de R$ 0 são fraudes, contra 0,16% das demais (chance **8,8 vezes** maior). Pode ser um teste para ver se a conta funciona antes do golpe.
+- **As fraudes têm valor mediano menor** (R$ 9,82 x R$ 22,00), mas média maior (R$ 123,87 x R$ 88,41): muitas pequenas e algumas grandes.
 
-**3º Tabela: Número de compras realizadas pela conta bancária**
+> 🧪 **Testes estatísticos** (o que importa é o tamanho do efeito, não o p):
+> - **H1 (valor):** Mann-Whitney com correlação de postos de −0,11 (efeito pequeno).
+> - **H2 (madrugada):** qui-quadrado com *odds ratio* de 3,51.
+> - **H3 (valor zero):** qui-quadrado com *odds ratio* de 8,81.
+> - **H4 (componentes):** Mann-Whitney com efeito de até 0,89 (`crt`).
+> - **H5 (correlação entre componentes):** máximo de 0,019; não há multicolinearidade.
+> - **H6 (dois dias):** V de Cramér de 0,005, diferença desprezível; por isso o `Timestamp` cru saiu do modelo.
+
+## 8. Construção da solução
+
+**1️⃣ Limpeza:** remoção de **1.081 duplicatas** (com elas, 344 transações do teste teriam uma cópia no treino) e troca do `Timestamp` pela **hora do dia**.
+
+**2️⃣ Separação:** treino (60%), validação (20%) e teste (20%), todos com 0,17% de fraudes. O teste só é usado no fim.
+
+**3️⃣ Desbalanceamento:** com 0,17% de fraudes, o modelo precisa de ajuda para não ignorar a classe rara. O **peso da classe** (fazer cada erro numa fraude "custar" mais) empatou com o SMOTE (criar fraudes sintéticas), sem dados falsos:
+
+| PR-AUC na validação | Sem balanceamento | Peso da classe | SMOTE |
+|---|---|---|---|
+| XGBoost | 0,711 | **0,891** | 0,893 |
+| LightGBM | 0,092 | **0,855** | 0,853 |
+| Regressão Logística | 0,800 | 0,788 | 0,788 |
+
+**4️⃣ Modelos:** XGBoost, Random Forest, LightGBM e Regressão Logística, comparados pela **PR-AUC**, que mede o quanto o modelo coloca as fraudes no topo da lista. A acurácia não serve: "nunca é fraude" acerta 99,83%.
+
+| Validação cruzada (5 dobras) | PR-AUC (média ± desvio) |
+|---|---|
+| **XGBoost** | **0,848 ± 0,028** |
+| Random Forest | 0,840 ± 0,034 (cerca de 8 vezes mais lento) |
+| LightGBM | 0,824 ± 0,032 |
+| Regressão Logística | 0,755 ± 0,027 |
+
+**5️⃣ Ajuste fino:** busca aleatória de hiperparâmetros otimizando a PR-AUC. O XGBoost ajustado (0,841) superou o padrão (0,820) nas mesmas dobras.
+
+**6️⃣ Limiar pelo custo em reais:** uma fraude não detectada custa o **valor da transação**, e cada revisão custa **R$ 5** (premissa). Na validação, o limiar de menor custo é **0,11**, e ele se mantém para revisões de R$ 1 a R$ 10.
 
 <div align="center">
-<img src="Imagens/VariavelCompras.PNG" width="200px">
+<img src="Imagens/Curva%20de%20custo.png" width="750px">
 </div>
-</br>
 
-**Nota:**
+**7️⃣ Regra complementar para valores altos:** as fraudes que mais custam são as de valor alto. Na validação, revisar também as transações **acima de R$ 200 com probabilidade a partir de 0,5%** aumentou a economia em R$ 122. Pesar cada fraude pelo valor no treino foi testado e não ajudou. A calibração isotônica também foi testada e não mudou nada mensurável.
 
-- O número médio de compras realizadas pela conta bancária é zero tanto para as transações que são fraudes quanto para as que não são fraudes.
-  - Isso significa que, em média, o número de compras realizadas pela conta bancária é baixo e não é um fator muito relevante para determinar se uma transação é fraudulenta ou não.
-- Além disso, a maioria dos valores é igual a zero (os quartis 25%, 50% e 75% são iguais a zero).
-  - Em outras palavras, a maior parte das transações não envolve a realização de compras pela conta bancária.
-- O valor máximo para compras não fraudulentas é 22, enquanto para transações fraudulentas é 5.
-  - Indicando que houve casos em que a conta bancária realizou um número relativamente grande de compras, mas muito menos frequentemente do que em casos suspeitos de fraude. O fato de que o valor máximo para transações não fraudulentas é maior do que para transações fraudulentas pode indicar que a conta bancária em questão é usada com mais frequência para transações legítimas, mas ainda pode haver casos em que a atividade é suspeita. É importante considerar outros fatores além do número de compras realizadas ao analisar a suspeita de fraude em transações bancárias.
+## 9. Resultado do modelo
 
-<br>
+No **teste** (56.746 transações e 95 fraudes nunca vistas), com a regra final (limiar de 0,11 + regra de valor):
 
-# _6. Modelos de Machine Learning_
-
-_**Balanceamento dos dados:**_
+| | Resultado |
+|---|---|
+| **Fraudes barradas** | **78 de 95** (recall de 82,1%) |
+| **Precisão** | 59,1% das transações revisadas eram fraude |
+| **Alarmes falsos** | 54 (0,1% das legítimas) |
+| **Valor barrado** | **R$ 12.154,24** de R$ 14.766,31 (**82,3%**) |
+| **Custo das revisões** | 132 x R$ 5 = R$ 660 |
+| **Economia líquida** | **R$ 11.494,24** (intervalo de 95% por bootstrap: R$ 6.255 a R$ 17.940) |
+| PR-AUC / AUC-ROC | 0,817 (intervalo de 0,736 a 0,889) / 0,975 |
 
 <div align="center">
-<img src="Imagens/DistribuicaoSMOTE.png" width="500px">
+<img src="Imagens/Ganho%20do%20modelo%20x%20sorteio.png" width="750px">
 </div>
-</br>
 
-_**Foi usado três algoritmos para construir o modelo de classificação:**_
+- Revisando as **50** transações de maior probabilidade, o time encontra **49 fraudes**; num sorteio, encontraria 0,08.
+- 🔎 A regra de valor rendeu **+R$ 989** no teste em relação a usar só o limiar (2 fraudes a mais, de valor alto, com 37 revisões a mais). No bootstrap, a regra final economiza mais que o limiar de 0,5 em **88%** das amostras.
+- ⚠️ **O que escapa:** 17 fraudes (R$ 2.612,07). Só **3** delas, acima de R$ 500, respondem por **83%** desse valor, e 13 têm probabilidade de até 0,1%: nas componentes, parecem legítimas.
+- ⚠️ **Em dados futuros, a fila cresce:** treinando nas primeiras 36 horas e avaliando nas últimas 12, a PR-AUC se mantém (**0,798**), mas a precisão cai de 0,59 para **0,27** (cerca de 3 alarmes falsos por fraude). A componente `lim_crt` muda bastante entre os dois dias (PSI de 1,05), e o monitoramento de deriva faz parte da entrega.
 
-1. XGBoost Regressor
-2. Light Gradient Boost Machine ( LGBM )
-3. Random Forest
+## 10. App interativo (Streamlit)
 
-_**Comparar o desempenho dos modelos de machine Learning:**_
+O app permite que a área de fraudes **teste a regra de decisão** sem abrir o notebook:
 
-<div align="center">
-<img src="Imagens/ComparandoModelos.PNG" width="300px">
-</div>
-</br>
+1. **Regra de decisão:** escolha o **limiar** e o **custo da revisão**, ligue ou desligue a **regra complementar para valores altos** e veja, nas 56.746 transações do teste, quantas fraudes seriam barradas, os alarmes falsos, o valor barrado e a economia líquida, além da curva de precisão e recall.
+2. **Analisar uma transação:** escolha uma das 50 transações da amostra e veja a probabilidade de fraude, a decisão e **por que** o modelo chegou a ela (valores SHAP).
 
-**Nota:**
+```bash
+streamlit run app.py
+```
 
-<p>Essa tabela mostra o desempenho de três modelos de classificação - XGBoost, LGBM e Random Forest - usando quatro medidas de avaliação: F1 Score, Acurácia, Precisão e Recall.</p>
+## 11. O que mudou da v1 para a v2
 
-<p>O F1 Score é uma medida que combina a Precisão e o Recall, indicando a capacidade do modelo em balancear a quantidade de verdadeiros positivos e falsos positivos, bem como a quantidade de verdadeiros negativos e falsos negativos. Um valor alto indica um bom desempenho do modelo.</p>
+| Tema | v1 (original) | v2 |
+|---|---|---|
+| Base | Lida de `Dataset/transferencias.csv`, fora do repositório | `Datasets/transferencias.zip` versionada; conferida com a base pública |
+| Colunas | Interpretadas pelos nomes ("valor médio das fraudes = −5", "−7 empréstimos") | Identificadas como **componentes PCA**; valor real em `hist_saldo` |
+| Duplicatas | Mantidas (1.081) | **Removidas** antes da separação |
+| `Timestamp` | Usado cru | Trocado pela **hora do dia** |
+| Balanceamento | SMOTE calculado, mas **nunca usado** no treino | Peso da classe x SMOTE comparados; **peso da classe** escolhido |
+| Validação | Só a 1ª divisão estratificada | 60/20/20 estratificado + **validação cruzada** (média ± desvio) |
+| Métrica | Acurácia (99,9% para todos) | **PR-AUC**, recall, precisão e **custo em reais** |
+| Seleção de variáveis | `mutual_info_regression` (de regressão) | `mutual_info_classif` + Random Forest |
+| Ajuste fino | Otimizava a acurácia; `max_features='auto'` (removido do scikit-learn) | `RandomizedSearchCV` otimizando a PR-AUC |
+| Avaliação dos modelos ajustados | **Nos dados em que treinaram** ("LightGBM com 100% em tudo") | Na validação nunca vista; o item 9 reproduz o erro (tudo = 1,000) |
+| Limiar | Fixo em 0,5 | **0,11**, de menor custo na validação, com análise de sensibilidade, + regra complementar para valores altos |
+| Incerteza e futuro | Não medidos | Intervalos por bootstrap, validação temporal e monitoramento de deriva (PSI) |
+| Explicação | Importância de variáveis lidas pelos nomes fictícios | Importância por permutação + **SHAP** de cada transação |
+| Resultado no teste | RF: F1 de 86,03%, recall de 78,57% | XGBoost: recall de **82,1%**, **82,3%** do valor barrado, economia de **R$ 11.494,24** |
+| Entrega | Notebook + `.pkl` | Notebook + pipeline e ficha JSON + app + 16 testes com CI + registro de decisões |
 
-<p>A Acurácia é a medida mais simples, indicando a proporção de previsões corretas em relação ao total de previsões. É uma medida útil, mas pode não ser suficiente para avaliar a qualidade de um modelo, especialmente quando as classes estão desbalanceadas.</p>
+## 12. Insights
 
-<p>A Precisão mede a proporção de verdadeiros positivos em relação ao total de positivos previstos, ou seja, a capacidade do modelo de não classificar um exemplo negativo como positivo. Um valor alto indica que o modelo faz poucos falsos positivos.</p>
+1. **A acurácia engana:** "nunca é fraude" acerta 99,83%. A PR-AUC e o resultado em reais são as medidas certas.
+2. **Poucas componentes fazem o trabalho:** `crt` (V14) e `cep` (V4) lideram a importância por permutação e o SHAP.
+3. **Peso da classe vale o mesmo que o SMOTE**, sem dados falsos. Sem balanceamento, o LightGBM falha.
+4. **Validação pequena engana:** com 94 fraudes, a validação cruzada é que decidiu o modelo.
+5. **A regra certa é a de menor custo, não o limiar de 0,5:** limiar de 0,11 mais uma regra para valores acima de R$ 200, robusta para revisões de até R$ 10.
+6. **O que escapa é pouco, mas caro, e invisível:** 3 fraudes grandes respondem por 83% do valor perdido, todas com probabilidade de até 0,1%.
+7. **O futuro é mais difícil que o teste aleatório:** em dados posteriores ao treino, a precisão cai para 0,27. Monitorar é parte da solução.
+8. **Os "100%" da versão original eram vazamento.**
+9. **Sinais simples ajudam o analista:** madrugada (3,5 vezes mais fraude) e valor zero (8,8 vezes).
 
-O Recall mede a proporção de verdadeiros positivos em relação ao total de positivos reais, ou seja, a capacidade do modelo de detectar todos os exemplos positivos. Um valor alto indica que o modelo faz poucos falsos negativos.</p>
+## 13. Limites
 
-- A partir desses resultados, podemos observar que o modelo XGBoost apresentou o melhor desempenho em todas as medidas de avaliação, com destaque para o F1 Score, que foi de 81.97%. O modelo LGBM apresentou um desempenho um pouco inferior, com destaque para a Precisão, que foi de 94.29%. Já o modelo Random Forest apresentou o pior desempenho, com destaque para o Recall, que foi de 66.18%. No entanto, é importante lembrar que a escolha do melhor modelo depende do contexto e das necessidades do problema em questão.
+- **Só 2 dias de dados:** os padrões de fraude mudam com o tempo. A validação temporal cobre só 12 horas e já mostrou a precisão caindo.
+- **Componentes anônimas:** não dá para explicar a decisão ao cliente em termos de negócio (o SHAP aponta componentes, não motivos), nem aplicar o modelo a outra base sem o mesmo PCA. O PCA foi feito pelo banco com a base inteira, incluindo o nosso teste.
+- **Premissas de custo:** o custo de R$ 5 por revisão é uma suposição, e os valores estão originalmente em euros na base pública.
+- **A regra de valor foi escolhida entre 28 combinações:** na validação, o ganho foi pequeno (R$ 122).
+- **Só 95 fraudes no teste:** a economia tem intervalo de 95% de R$ 6.255 a R$ 17.940.
 
-<p>As vezes o algoritmo simples seja a melhor opção se a diferença não é muito distânte (menos é mais), porque um algoritmo complexo, onde vamos ter que fazer muita tunagem de hiperparametros, muito pré-processamento, isso pode na hora de implementar o modelo em produção, pode causar problemas.</p>
+## 14. Próximos passos
 
-_**Comparar o desempenho dos modelos de machine Learning - hiperparâmetros:**_
+1. **Mais dias de dados e validação temporal em janelas deslizantes**, para entender a queda de precisão e definir de quanto em quanto tempo retreinar.
+2. **Alertas de deriva automáticos**, começando pela investigação de `lim_crt`.
+3. **Variáveis de comportamento do cliente** (histórico, frequência, dispositivo), o único caminho para as fraudes que o modelo não enxerga.
+4. **Fila priorizada pelo valor esperado** (probabilidade × valor), com teto de revisões por dia.
+5. **Publicar o app** no Streamlit Community Cloud e expor o modelo numa API.
 
-<div align="center">
-<img src="Imagens/ComparandoModelosHP.PNG" width="600px">
-</div>
-</br>
+---
 
-**Nota:**
-
-Legenda HP: Hiperparâmetros (significa que o modelo passou por otimização de hiperparâmetros)
-
-<p>Se a métrica mais importante é o F1 Score, então o LGBM com ajuste de hiperparâmetros seria a escolha, pois obteve um resultado de 100%. Porém, se a acurácia é a métrica mais importante, todos os modelos apresentaram desempenho muito semelhante. Já se a precisão e o recall são as métricas mais importantes, então seria necessário avaliar qual modelo atende melhor a essas métricas. No geral, considerando as métricas apresentadas, o XGBoost com ajuste de hiperparâmetros e o LGBM com ajuste de hiperparâmetros são os modelos mais promissores.</p>
-
-- O XGBoost e o Random Forest, que passaram por ajuste de hiperparâmetros, tiveram um desempenho muito próximo em termos de F1-Score, com o LGBM obtendo o melhor resultado. No entanto, os modelos ajustados tiveram um tempo maior de treinamento, em comparação com os modelos não ajustados.
-- Em termos de acurácia, todos os modelos apresentaram um excelente desempenho, com valores acima de 99,9%.
-- A precisão, que representa a proporção de verdadeiros positivos em relação a todos os positivos previstos, foi excelente em todos os modelos, com o LGBM obtendo o melhor resultado.
-- Já o recall, que representa a proporção de verdadeiros positivos em relação a todos os verdadeiros positivos, foi menor em comparação com as outras métricas, sendo o Random Forest o modelo com melhor resultado.
-
-No entanto, é importante avaliar outros fatores, como a escalabilidade do modelo, a facilidade de implantação e manutenção, e a interpretabilidade das previsões.
-
-- Se a equipe tem recursos suficientes para implementar e manter um modelo mais complexo, como XGBoost ou LGBM com ajuste de hiperparâmetros, esses modelos podem apresentar uma melhor precisão e desempenho em relação ao Random Forest - HP.
-- Por outro lado, se a equipe não tem recursos para lidar com modelos mais complexos, o Random Forest - HP pode ser uma boa escolha, pois tem uma boa precisão e é relativamente simples de ser implementado e mantido.
-
-Nesse caso, o Random Forest - HP também pode ser uma boa escolha, pois é um modelo relativamente fácil de interpretar.
-
-Explicação:
-
-Os modelos XGBoost e LightGBM são considerados mais complexos do que modelos de aprendizado de máquina mais simples, como Regressão Logística ou Árvores de Decisão, porque possuem mais parâmetros a serem ajustados e usam técnicas mais avançadas para construir árvores de decisão, como a otimização de gradiente e a amostragem ponderada.
-
-Esses modelos também podem apresentar maior capacidade de generalização e melhor desempenho em conjuntos de dados maiores e mais complexos. No entanto, sua complexidade pode tornar a implementação e manutenção mais desafiadoras, e eles podem levar mais tempo para treinar em comparação com modelos mais simples.
-
-_**Modelo final:**_
-
-<div align="center">
-<img src="Imagens/ModeloFinal.PNG" width="200px">
-</div>
-</br>
-
-<br>
-
-# _7. Performance do Modelo de Machine Learning_
-
-<div align="center">
-<img src="Imagens/ModeloFinal2.PNG" width="500px">
-</div>
-</br>
-
-**Nota:**
-
-- Podemos dizer que o modelo Random Forest alcançou uma acurácia de 99.96%, o que significa que ele foi capaz de classificar corretamente a maioria das transações (tanto as genuínas quanto as fraudulentas). O modelo apresentou um desempenho muito bom na detecção de transações genuínas, acertando todas as 56.864 transações genuínas do conjunto de testes.
-- Ao mesmo tempo, o modelo também detectou muitas transações fraudulentas, com uma precisão de 95.06%, o que significa que ele acertou a maioria das vezes quando indicou que uma transação era fraudulenta. O modelo também conseguiu detectar um bom número de transações fraudulentas, com um recall de 78.57%, o que significa que ele identificou a maioria das transações fraudulentas presentes no conjunto de testes.
-
-Com base nesses resultados, podemos dizer que o modelo Random Forest é capaz de identificar a maioria das transações fraudulentas com uma alta precisão e recall, o que é muito importante para proteger o negócio contra perdas financeiras decorrentes de atividades fraudulentas.
-
-<br>
-
-# _8. Conclusão_
-
-Em conclusão, o desenvolvimento e implementação de um modelo preditivo para detecção de transferências fraudulentas em uma Instituição Financeira é uma medida crucial para combater os golpes e proteger os clientes. Através da aplicação de técnicas de ciência de dados e algoritmos de classificação, foi possível construir um modelo capaz de identificar padrões e características associadas às transações fraudulentas. A implementação desse modelo permitirá uma detecção mais eficiente de atividades suspeitas, contribuindo para a redução de prejuízos financeiros e fortalecendo a segurança das transações bancárias. Além disso, o relatório detalhando as análises e descobertas fornecerá insights valiosos sobre os principais fatores associados às transações fraudulentas, permitindo que a Instituição Financeira tome medidas preventivas e melhore continuamente suas estratégias de segurança. Em um cenário onde os golpes bancários pela internet têm apresentado um crescimento significativo, essa solução desempenhará um papel fundamental na proteção dos clientes e na preservação da confiança na Instituição Financeira.
-
-<br>
-
-# _9. Próximos passos_
-
-- Implementar o método de Threshold que é uma técnica utilizada para ajustar a probabilidade de predições em modelos de classificação binária.
-    - Por exemplo: se o threshold for 0.5, todas as amostras com probabilidade maior ou igual a 0.5 serão classificadas como pertencentes à classe positiva e as demais como pertencentes à classe negativa. No entanto, o valor do threshold pode ser ajustado para alterar o trade-off entre precisão e recall do modelo.
+**Autor:** Rafael R. Silva · [GitHub](https://github.com/RafaelSilva89)

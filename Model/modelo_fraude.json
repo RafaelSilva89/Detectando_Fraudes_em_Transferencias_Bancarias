@@ -1,0 +1,85 @@
+{
+  "data_treino": "2026-10-24 14:13",
+  "modelo": "XGBoost ajustado, com peso da classe",
+  "arquivo": "modelo_fraude.pkl",
+  "treinado_com": "226.980 transações (treino + validação), 378 fraudes",
+  "colunas_de_entrada": [
+    "pais",
+    "cidade",
+    "bairro",
+    "cep",
+    "ip",
+    "dia",
+    "hora",
+    "minuto",
+    "so",
+    "valor",
+    "antecedentes",
+    "reclamacoes",
+    "qtd_trans",
+    "crt",
+    "limite_global",
+    "tipo_crt",
+    "estabelecimento",
+    "contas",
+    "emprestimos",
+    "navegador",
+    "android",
+    "ios",
+    "compras",
+    "hist_navegacao",
+    "relacionamento",
+    "ind_seguranca",
+    "tempo_transacao",
+    "lim_crt",
+    "hist_saldo",
+    "hora_do_dia"
+  ],
+  "alvo": "Target (1 = fraude, 0 = legítima)",
+  "limiar_recomendado": 0.11,
+  "criterio_do_limiar": "custo mínimo na validação: fraude perdida = valor da transação, revisão = R$ 5",
+  "regra_complementar_de_valor": {
+    "corte_valor": 200.0,
+    "limiar_valor": 0.005
+  },
+  "intervalo_95_economia_teste": {
+    "regra final": [
+      6255.42,
+      17940.01
+    ]
+  },
+  "validacao_temporal_ultimas_12h": {
+    "pr_auc": 0.7977,
+    "recall": 0.7982
+  },
+  "hiperparametros": {
+    "colsample_bytree": 0.8566223936114975,
+    "learning_rate": 0.15695770551890384,
+    "max_depth": 4.0,
+    "min_child_weight": 7.0,
+    "n_estimators": 454.0,
+    "scale_pos_weight": 24.462604401095707,
+    "subsample": 0.7975182385457563
+  },
+  "metricas_teste": {
+    "Precisão": 0.5909,
+    "Recall (Sensibilidade)": 0.8211,
+    "F1-Score": 0.6872,
+    "PR-AUC": 0.8169,
+    "AUC-ROC": 0.9753
+  },
+  "resultado_teste_reais": {
+    "Valor total das fraudes": 14766.31,
+    "Valor das fraudes barradas": 12154.24,
+    "% do valor barrado": 0.82,
+    "Custo das revisões": 660.0,
+    "Economia líquida": 11494.24,
+    "Transações revisadas": 132.0
+  },
+  "avisos": [
+    "28 das 30 variáveis são componentes PCA anônimas: só servem para bases geradas com o mesmo PCA.",
+    "hora_do_dia supõe que a contagem do tempo começa à meia-noite.",
+    "Base de apenas 2 dias: acompanhar o desempenho em produção e retreinar.",
+    "O limiar depende da premissa de custo de revisão (R$ 5)."
+  ]
+}
