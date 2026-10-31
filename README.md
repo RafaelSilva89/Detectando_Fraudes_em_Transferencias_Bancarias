@@ -6,15 +6,15 @@
 <img src="https://media4.giphy.com/media/RDZo7znAdn2u7sAcWH/giphy.gif" width="300px">
 </div>
 
-**Python · scikit-learn · XGBoost · LightGBM · imbalanced-learn · Streamlit · CRISP-DM**
+**Python · scikit-learn · XGBoost · LightGBM · imbalanced-learn · Optuna · Streamlit · CRISP-DM**
 
 | 📊 Destaques | |
 |---|---|
 | Base | **283.726 transações** em 2 dias (sem duplicatas), só **473 fraudes (0,17%)** |
 | Resultado no teste | Revisando **132** das 56.746 transações (0,23%), o modelo barra **78 das 95 fraudes (82%)** e **82,3% do valor fraudado** |
 | Em reais | **R$ 12.154,24** barrados com R$ 660 em revisões: economia líquida de **R$ 11.494,24** (intervalo de 95%: R$ 6.255 a R$ 17.940) |
-| Modelo | **XGBoost** com peso da classe, PR-AUC de **0,817** no teste (o acaso daria 0,002). Regra de decisão escolhida pelo menor custo: limiar de **0,11**, ou de **0,005** para transações acima de **R$ 200** |
-| Entrega | Notebook CRISP-DM + modelo e ficha em `Model/` + **app Streamlit** com explicação SHAP + **16 testes automatizados** (com CI) |
+| Modelo | **XGBoost** com peso da classe, PR-AUC de **0,817** no teste (o acaso daria 0,002). Regra de decisão escolhida pelo menor custo: limiar de **0,11**, ou de **0,005** para transações acima de **R$ 200**. Hiperparâmetros: **Grid x Random x Bayesiana (Optuna com poda)** comparados |
+| Entrega | Notebook CRISP-DM + modelo e ficha em `Model/` + **app Streamlit** com explicação SHAP + **monitoramento em produção** (PSI, K-S, SLA, também numa aba do app) + **24 testes automatizados** (com CI) |
 
 ---
 
@@ -73,22 +73,26 @@ Detectando_Fraudes_em_Transferencias_Bancarias/
 │   ├── Detectando Fraudes em Transferências Bancárias.ipynb        # versão original
 │   └── Detectando Fraudes em Transferências Bancárias - v2.ipynb   # versão reorganizada (CRISP-DM)
 ├── docs/
-│   └── decisoes_analiticas.md             # registro das decisões do projeto (DA-01 a DA-12)
+│   └── decisoes_analiticas.md             # registro das decisões do projeto (DA-01 a DA-14)
 ├── reports/
 │   ├── comparacao_modelos.csv             # métricas de todos os modelos na validação
 │   ├── previsoes_teste.csv                # probabilidades do teste (usadas pelo app)
-│   └── amostra_transacoes.csv             # 50 transações do teste para o app
+│   ├── amostra_transacoes.csv             # 50 transações do teste para o app
+│   ├── lotes_monitoramento.csv.gz         # últimas 12 h da base (aba Monitoramento do app)
+│   └── referencia_monitoramento.csv       # amostra das primeiras 36 h: referência do PSI e do K-S
 ├── src/
-│   ├── config.py                          # caminhos, semente e premissas de custo
+│   ├── config.py                          # caminhos, semente, premissas de custo e variáveis monitoradas
 │   ├── dados.py                           # leitura, significado das colunas, duplicatas e hora do dia
 │   ├── estatistica.py                     # testes das hipóteses (com tamanho de efeito) e regra do IQR
 │   ├── selecao.py                         # Random Forest e Informação Mútua
 │   ├── avaliacao.py                       # métricas, limiar, regra de valor, custo em reais, bootstrap, PSI e ficha do modelo
 │   ├── explicacao.py                      # valores SHAP de cada previsão (pelo próprio XGBoost)
+│   ├── otimizacao.py                      # Grid x Random x Bayesiana (Optuna com poda): objetivo e tabela comparativa
+│   ├── monitoramento.py                   # PSI e K-S das entradas e desempenho de cada lote contra o SLA
 │   └── graficos.py                        # funções de gráficos
 ├── tests/
 │   ├── test_funcoes.py                    # testes das funções de src/
-│   └── test_app.py                        # abre o app e confere os indicadores (AppTest)
+│   └── test_app.py                        # abre o app e confere os indicadores e a aba de monitoramento (AppTest)
 ├── app.py                                 # app Streamlit
 ├── pytest.ini
 ├── requirements.txt
@@ -121,9 +125,9 @@ pytest
 |---|---|
 | **01. Entendimento do negócio** | Pergunta, métrica (PR-AUC) e custo de cada tipo de erro |
 | **02. Preparação dos dados** | Significado real das colunas, remoção de 1.081 duplicatas, outliers pelo IQR, 6 hipóteses com testes estatísticos e criação da hora do dia |
-| **03. Modelagem** | Separação 60/20/20 estratificada, peso da classe x SMOTE, seleção de variáveis, 4 algoritmos, validação cruzada, ajuste fino pela PR-AUC, **limiar pelo custo em reais**, calibração, **regra complementar para valores altos** e teste anti-vazamento |
-| **04. Avaliação** | Teste aberto uma única vez: métricas, resultado em reais, **intervalos de confiança (bootstrap)**, **validação temporal**, erros por valor e horário, importância por permutação e **SHAP** |
-| **05. Implantação** | Modelo e ficha em `Model/`, simulação, curva "fraudes encontradas x transações revisadas" e **monitoramento de deriva (PSI)** |
+| **03. Modelagem** | Separação 60/20/20 estratificada, peso da classe x SMOTE, seleção de variáveis, 4 algoritmos, validação cruzada, **ajuste fino comparando Grid, Random e Bayesiana (Optuna)**, **limiar pelo custo em reais**, calibração, **regra complementar para valores altos** e teste anti-vazamento |
+| **04. Avaliação** | Teste aberto uma única vez: métricas, **curvas ROC e PR**, resultado em reais, **intervalos de confiança (bootstrap)**, **validação temporal**, erros por valor e horário, importância por permutação e **SHAP** |
+| **05. Implantação** | Modelo e ficha em `Model/`, simulação, curva "fraudes encontradas x transações revisadas" e **monitoramento em produção** (PSI e K-S, SLA por lote e plano de retreino) |
 
 ## 7. Principais descobertas da EDA
 
@@ -178,7 +182,20 @@ pytest
 | LightGBM | 0,824 ± 0,032 |
 | Regressão Logística | 0,755 ± 0,027 |
 
-**5️⃣ Ajuste fino:** busca aleatória de hiperparâmetros otimizando a PR-AUC. O XGBoost ajustado (0,841) superou o padrão (0,820) nas mesmas dobras.
+**5️⃣ Ajuste fino:** três métodos de busca de hiperparâmetros, nas mesmas 3 dobras do treino e otimizando a PR-AUC (o teste fica trancado):
+
+| Método | PR-AUC (validação cruzada) | Custo |
+|---|---|---|
+| Sem ajuste | 0,820 ± 0,076 | – |
+| **Grid Search** (testa todas as combinações de 3 hiperparâmetros) | 0,837 ± 0,069 | 54 modelos, 17,2 min |
+| **Random Search** (sorteia 20 combinações dos 7) | 0,841 ± 0,062 | 60 modelos, 26,7 min |
+| **Bayesiana com Optuna** (aprende com as tentativas anteriores e **poda** as ruins no meio) | 0,842 ± 0,064 | **40 modelos, 15,6 min** |
+
+Os três empataram (diferença de 0,001, contra um desvio de ~0,064 entre as dobras), e, pela regra definida antes da busca, o modelo do Random Search foi mantido. A poda cortou 10 das 20 tentativas, todas depois da 1ª dobra: com 7 hiperparâmetros e um treino caro, a vantagem da Bayesiana foi o **custo**. A grade completa dos 7 hiperparâmetros levaria ~35 horas.
+
+<div align="center">
+<img src="Imagens/Comparacao%20dos%20metodos%20de%20busca.png" width="750px">
+</div>
 
 **6️⃣ Limiar pelo custo em reais:** uma fraude não detectada custa o **valor da transação**, e cada revisão custa **R$ 5** (premissa). Na validação, o limiar de menor custo é **0,11**, e ele se mantém para revisões de R$ 1 a R$ 10.
 
@@ -206,10 +223,16 @@ No **teste** (56.746 transações e 95 fraudes nunca vistas), com a regra final 
 <img src="Imagens/Ganho%20do%20modelo%20x%20sorteio.png" width="750px">
 </div>
 
+<div align="center">
+<img src="Imagens/Curvas%20ROC%20e%20PR.png" width="750px">
+</div>
+
+- 🔎 **A curva ROC engana com fraude rara:** o AUC-ROC de 0,975 parece quase perfeito porque a regra final revisa só 0,095% das legítimas. A curva **Precision-Recall** mostra o preço real de cada fraude a mais, e por isso a PR-AUC é a métrica principal.
 - Revisando as **50** transações de maior probabilidade, o time encontra **49 fraudes**; num sorteio, encontraria 0,08.
 - 🔎 A regra de valor rendeu **+R$ 989** no teste em relação a usar só o limiar (2 fraudes a mais, de valor alto, com 37 revisões a mais). No bootstrap, a regra final economiza mais que o limiar de 0,5 em **88%** das amostras.
 - ⚠️ **O que escapa:** 17 fraudes (R$ 2.612,07). Só **3** delas, acima de R$ 500, respondem por **83%** desse valor, e 13 têm probabilidade de até 0,1%: nas componentes, parecem legítimas.
-- ⚠️ **Em dados futuros, a fila cresce:** treinando nas primeiras 36 horas e avaliando nas últimas 12, a PR-AUC se mantém (**0,798**), mas a precisão cai de 0,59 para **0,27** (cerca de 3 alarmes falsos por fraude). A componente `lim_crt` muda bastante entre os dois dias (PSI de 1,05), e o monitoramento de deriva faz parte da entrega.
+- ⚠️ **Em dados futuros, a fila cresce:** treinando nas primeiras 36 horas e avaliando nas últimas 12, a PR-AUC se mantém (**0,798**), mas a precisão cai de 0,59 para **0,27** (cerca de 3 alarmes falsos por fraude). A componente `lim_crt` muda bastante entre os dois dias (PSI de 1,05), e o monitoramento faz parte da entrega.
+- 📡 **Monitoramento em produção:** PSI e teste K-S para as entradas (sem precisar do gabarito) e um **SLA** tirado do bootstrap do teste (PR-AUC ≥ 0,736 e recall ≥ 0,747) para o desempenho. Em 3 lotes de 4 horas, o último ficou logo abaixo (PR-AUC de 0,734, com só 22 fraudes). O notebook define quando um alerta vira retreino e como trocar o modelo sem risco (shadow mode, canary, rollback).
 
 ## 10. App interativo (Streamlit)
 
@@ -217,6 +240,7 @@ O app permite que a área de fraudes **teste a regra de decisão** sem abrir o n
 
 1. **Regra de decisão:** escolha o **limiar** e o **custo da revisão**, ligue ou desligue a **regra complementar para valores altos** e veja, nas 56.746 transações do teste, quantas fraudes seriam barradas, os alarmes falsos, o valor barrado e a economia líquida, além da curva de precisão e recall.
 2. **Analisar uma transação:** escolha uma das 50 transações da amostra e veja a probabilidade de fraude, a decisão e **por que** o modelo chegou a ela (valores SHAP).
+3. **📡 Monitoramento:** a simulação de produção do notebook (modelo treinado nas primeiras 36 horas, decidindo as últimas 12) em lotes de 2 a 12 horas, com a situação de cada lote em relação ao **SLA da ficha do modelo** e o **PSI e o K-S** das variáveis monitoradas. Também é possível **enviar um lote novo** (CSV com as 30 colunas): o app calcula o drift e, se houver a coluna `Target`, confere o SLA. As contas vêm de `src/monitoramento.py`, as mesmas do notebook.
 
 ```bash
 streamlit run app.py
@@ -234,20 +258,20 @@ streamlit run app.py
 | Validação | Só a 1ª divisão estratificada | 60/20/20 estratificado + **validação cruzada** (média ± desvio) |
 | Métrica | Acurácia (99,9% para todos) | **PR-AUC**, recall, precisão e **custo em reais** |
 | Seleção de variáveis | `mutual_info_regression` (de regressão) | `mutual_info_classif` + Random Forest |
-| Ajuste fino | Otimizava a acurácia; `max_features='auto'` (removido do scikit-learn) | `RandomizedSearchCV` otimizando a PR-AUC |
+| Ajuste fino | Otimizava a acurácia; `max_features='auto'` (removido do scikit-learn) | Grid x Random x Bayesiana (Optuna com poda) otimizando a PR-AUC, com a regra do desvio entre as dobras |
 | Avaliação dos modelos ajustados | **Nos dados em que treinaram** ("LightGBM com 100% em tudo") | Na validação nunca vista; o item 9 reproduz o erro (tudo = 1,000) |
 | Limiar | Fixo em 0,5 | **0,11**, de menor custo na validação, com análise de sensibilidade, + regra complementar para valores altos |
-| Incerteza e futuro | Não medidos | Intervalos por bootstrap, validação temporal e monitoramento de deriva (PSI) |
+| Incerteza e futuro | Não medidos | Intervalos por bootstrap, validação temporal, curvas ROC e PR e monitoramento (PSI, K-S, SLA por lote) |
 | Explicação | Importância de variáveis lidas pelos nomes fictícios | Importância por permutação + **SHAP** de cada transação |
 | Resultado no teste | RF: F1 de 86,03%, recall de 78,57% | XGBoost: recall de **82,1%**, **82,3%** do valor barrado, economia de **R$ 11.494,24** |
-| Entrega | Notebook + `.pkl` | Notebook + pipeline e ficha JSON + app + 16 testes com CI + registro de decisões |
+| Entrega | Notebook + `.pkl` | Notebook + pipeline e ficha JSON + app com aba de monitoramento + 24 testes com CI + registro de decisões |
 
 ## 12. Insights
 
 1. **A acurácia engana:** "nunca é fraude" acerta 99,83%. A PR-AUC e o resultado em reais são as medidas certas.
 2. **Poucas componentes fazem o trabalho:** `crt` (V14) e `cep` (V4) lideram a importância por permutação e o SHAP.
 3. **Peso da classe vale o mesmo que o SMOTE**, sem dados falsos. Sem balanceamento, o LightGBM falha.
-4. **Validação pequena engana:** com 94 fraudes, a validação cruzada é que decidiu o modelo.
+4. **Validação pequena engana:** com 94 fraudes, a validação cruzada é que decidiu o modelo. Grid, Random e Bayesiana empataram; a Bayesiana com poda chegou lá com um terço menos modelos.
 5. **A regra certa é a de menor custo, não o limiar de 0,5:** limiar de 0,11 mais uma regra para valores acima de R$ 200, robusta para revisões de até R$ 10.
 6. **O que escapa é pouco, mas caro, e invisível:** 3 fraudes grandes respondem por 83% do valor perdido, todas com probabilidade de até 0,1%.
 7. **O futuro é mais difícil que o teste aleatório:** em dados posteriores ao treino, a precisão cai para 0,27. Monitorar é parte da solução.
@@ -265,7 +289,7 @@ streamlit run app.py
 ## 14. Próximos passos
 
 1. **Mais dias de dados e validação temporal em janelas deslizantes**, para entender a queda de precisão e definir de quanto em quanto tempo retreinar.
-2. **Alertas de deriva automáticos**, começando pela investigação de `lim_crt`.
+2. **Automatizar o monitoramento** (as funções de `src/monitoramento.py` rodando todo dia, com alerta), começando pela investigação de `lim_crt`.
 3. **Variáveis de comportamento do cliente** (histórico, frequência, dispositivo), o único caminho para as fraudes que o modelo não enxerga.
 4. **Fila priorizada pelo valor esperado** (probabilidade × valor), com teto de revisões por dia.
 5. **Publicar o app** no Streamlit Community Cloud e expor o modelo numa API.

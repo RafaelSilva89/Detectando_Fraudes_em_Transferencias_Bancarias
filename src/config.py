@@ -14,4 +14,7 @@ ALVO = 'Target'
 CUSTO_REVISAO = 5.0
 META_RECALL = 0.80   # alternativa de limiar: encontrar pelo menos 80% das fraudes
 
+# Monitoramento em produção: variáveis acompanhadas pelo PSI e pelo teste K-S (as 4 mais importantes, o valor e a hora)
+VARIAVEIS_MONITORADAS = ['crt', 'cep', 'reclamacoes', 'lim_crt', 'hist_saldo', 'hora_do_dia']
+
 N_JOBS = 2   # núcleos em paralelo: limitado para não esgotar a memória da máquina

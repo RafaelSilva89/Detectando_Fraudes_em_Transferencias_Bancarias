@@ -1,11 +1,14 @@
+import json
+
 import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
 
 from src.avaliacao import aplicar_regra, resumo_financeiro
-from src.config import CUSTO_REVISAO, PASTA_MODELO, PASTA_REPORTS
+from src.config import CUSTO_REVISAO, PASTA_MODELO, PASTA_REPORTS, VARIAVEIS_MONITORADAS
 from src.explicacao import contribuicoes_xgboost
+from src.monitoramento import painel_lotes, relatorio_drift
 
 st.set_page_config(page_title="Detecção de Fraudes 🕵️", page_icon="🕵️", layout="wide")
 st.title("🕵️ Detecção de Fraudes em Transferências")
@@ -28,9 +31,24 @@ def carregar_dados():
     return previsoes, amostra
 
 
+@st.cache_data
+def carregar_monitoramento():
+    with open(PASTA_MODELO / "modelo_fraude.json", encoding="utf-8") as arquivo:
+        sla = json.load(arquivo)["monitoramento"]
+    lotes = pd.read_csv(PASTA_REPORTS / "lotes_monitoramento.csv.gz")
+    referencia = pd.read_csv(PASTA_REPORTS / "referencia_monitoramento.csv")
+    return sla, lotes, referencia
+
+
 def reais(valor):
     return f"R$ {valor:,.0f}".replace(",", ".")
 
+
+FORMATO_LOTES = {"Transações": "{:,.0f}", "Fraudes": "{:.0f}", "Revisões": "{:.0f}", "PR-AUC": "{:.3f}",
+                 "Recall": "{:.3f}", "Precisão da fila": "{:.3f}"}
+# A hora do dia fica fora do drift por lote: um lote de poucas horas cobre só uma parte do dia e sempre "mudaria"
+VARIAVEIS_LOTE = [coluna for coluna in VARIAVEIS_MONITORADAS if coluna != "hora_do_dia"]
+FORMATO_DRIFT = {"PSI": "{:.3f}", "K-S (distância)": "{:.3f}", "K-S (p-valor)": "{:.3g}"}
 
 if not CAMINHO_MODELO.exists():
     st.error("Modelo não encontrado. Execute o notebook v2 para gerar Model/modelo_fraude.pkl.")
@@ -53,7 +71,8 @@ with st.sidebar:
                                  f"com probabilidade ≥ {regra_valor['limiar_valor']:.2%}", value=True)
     regra_ativa = regra_valor if usar_regra else None
 
-aba_regra, aba_transacao = st.tabs(["📊 Regra de decisão", "🔍 Analisar uma transação"])
+aba_regra, aba_transacao, aba_monitoramento = st.tabs(["📊 Regra de decisão", "🔍 Analisar uma transação",
+                                                       "📡 Monitoramento"])
 
 ### Regra de decisão, nas transações do teste
 with aba_regra:
@@ -104,6 +123,57 @@ with aba_transacao:
     st.bar_chart(principais.rename("Efeito no score (positivo = fraude)"), horizontal=True)
     st.caption("As componentes PCA (crt, cep, reclamacoes etc.) são anônimas: o gráfico mostra quais pesaram, "
                "mas não o que significam no negócio.")
+
+### Monitoramento em produção: desempenho por lote (SLA) e data drift
+with aba_monitoramento:
+    sla, lotes, referencia = carregar_monitoramento()
+    st.markdown("Simulação de produção: o modelo treinado nas **primeiras 36 horas** da base decide as **últimas 12 horas**, "
+                "em lotes, como se o gabarito de cada lote chegasse depois (contestações dos clientes). "
+                "A regra de decisão é a escolhida ao lado.")
+    horas_lote = st.select_slider("Tamanho do lote (horas)", options=[2, 3, 4, 6, 12], value=4)
+    inicio = 36 + (lotes["hora"] - 36) // horas_lote * horas_lote
+    rotulos = inicio.astype(int).map(lambda h: f"{h} a {h + horas_lote} h")
+    revisar = aplicar_regra(lotes["probabilidade"], lotes["hist_saldo"], limiar, regra_ativa)
+    painel = painel_lotes(lotes["real"], lotes["probabilidade"], revisar, rotulos,
+                          sla["sla_pr_auc_minima"], sla["sla_recall_minimo"])
+    abaixo = int((painel["Situação"] == "🚨 abaixo do SLA").sum())
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("SLA de PR-AUC", f"≥ {sla['sla_pr_auc_minima']:.3f}")
+    col2.metric("SLA de recall da regra", f"≥ {sla['sla_recall_minimo']:.3f}")
+    col3.metric("Lotes abaixo do SLA", f"{abaixo} de {len(painel)}")
+    st.dataframe(painel.style.format(FORMATO_LOTES, na_rep="–"))
+    st.caption("SLA = limites inferiores do intervalo de 95% do bootstrap do teste. Lotes pequenos têm poucas "
+               "fraudes, e uma fraude a mais ou a menos muda bastante a PR-AUC: um alerta isolado pede investigação, "
+               "não retreino automático.")
+
+    st.markdown("#### Data drift de um lote (não precisa do gabarito)")
+    lote = st.selectbox("Lote", painel.index, index=len(painel) - 1)
+    drift = relatorio_drift(referencia, lotes[(rotulos == lote).to_numpy()], VARIAVEIS_LOTE)
+    st.dataframe(drift.style.format(FORMATO_DRIFT))
+    st.caption(f"Referência: amostra de {len(referencia):,} transações das primeiras 36 horas. ".replace(",", ".") +
+               f"PSI até 0,10: estável; até 0,25: atenção; acima de {sla['psi_alerta']:.2f}: mudança (investigar ou "
+               "retreinar). Com lotes grandes, o p-valor do K-S fica perto de 0 até para diferenças pequenas: leia a distância. "
+               "A hora do dia fica de fora: um lote de poucas horas sempre cobre só uma parte do dia (no notebook, ela é "
+               "comparada dia contra dia).")
+
+    st.markdown("#### Avaliar um lote novo")
+    arquivo = st.file_uploader("CSV com as 30 colunas do modelo (e a coluna Target, se o gabarito já tiver chegado)",
+                               type="csv")
+    if arquivo is not None:
+        novo = pd.read_csv(arquivo)
+        faltando = [coluna for coluna in modelo["colunas"] if coluna not in novo.columns]
+        if faltando:
+            st.error(f"Faltam {len(faltando)} colunas no arquivo, por exemplo: {', '.join(faltando[:5])}.")
+        else:
+            prob_novo = modelo["pipeline"].predict_proba(novo[modelo["colunas"]])[:, 1]
+            revisar_novo = aplicar_regra(prob_novo, novo["hist_saldo"], limiar, regra_ativa)
+            st.metric("Transações enviadas para revisão", f"{int(revisar_novo.sum())} de {len(novo)}")
+            st.dataframe(relatorio_drift(referencia, novo, VARIAVEIS_LOTE).style.format(FORMATO_DRIFT))
+            if "Target" in novo.columns:
+                st.dataframe(painel_lotes(novo["Target"], prob_novo, revisar_novo, ["lote enviado"] * len(novo),
+                                          sla["sla_pr_auc_minima"], sla["sla_recall_minimo"])
+                             .style.format(FORMATO_LOTES, na_rep="–"))
 
 st.info("ℹ️ Premissas: uma fraude não barrada custa o valor da transação; cada transação revisada custa o valor "
         "definido ao lado. O modelo foi treinado com 2 dias de transações e deve ser acompanhado em produção.")

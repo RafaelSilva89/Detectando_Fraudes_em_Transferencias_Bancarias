@@ -20,6 +20,8 @@ Os números vêm das saídas do notebook [`Notebooks/Detectando Fraudes em Trans
 | [DA-10](#da-10--regra-complementar-para-valores-altos) | Regra complementar para valores altos |
 | [DA-11](#da-11--probabilidades-sem-calibração-isotônica) | Probabilidades sem calibração isotônica |
 | [DA-12](#da-12--validação-temporal-e-monitoramento-de-deriva) | Validação temporal e monitoramento de deriva |
+| [DA-13](#da-13--grid-x-random-x-bayesiana-random-search-mantido) | Grid x Random x Bayesiana: Random Search mantido |
+| [DA-14](#da-14--sla-e-plano-de-retreino) | SLA e plano de retreino |
 
 ---
 
@@ -117,4 +119,20 @@ Os números vêm das saídas do notebook [`Notebooks/Detectando Fraudes em Trans
 - **Decisão:** conferir o modelo treinando nas primeiras 36 h e avaliando nas últimas 12 h (sem escolher nada ali) e monitorar o PSI do score e das variáveis mais importantes, com investigação acima de 0,25.
 - **Alternativas consideradas:** confiar só no teste aleatório.
 - **Consequência:** a PR-AUC se mantém (0,798 contra 0,817), mas a precisão cai de 0,591 para 0,268: a fila de revisão pode ser mais que o dobro em produção. O score está estável entre os dias (PSI de 0,035), mas `lim_crt` muda muito (PSI de 1,05; KS de 0,36).
-- **Onde está:** `psi` em `src/avaliacao.py`; item 1.2 da Fase 04 e monitoramento de deriva na Fase 05.
+- **Onde está:** `psi` em `src/avaliacao.py`; item 1.2 da Fase 04 e item 3 da Fase 05 (com o teste K-S na mesma tabela; ver também DA-14).
+
+## DA-13 — Grid x Random x Bayesiana: Random Search mantido
+
+- **Contexto:** o XGBoost tem 7 hiperparâmetros e cada treino leva cerca de 20 s: é o cenário em que o método de busca pesa. A versão anterior usava só o Random Search.
+- **Decisão:** comparar os três métodos nas mesmas 3 dobras estratificadas do treino, pela PR-AUC: Grid Search (3 hiperparâmetros, 18 combinações), Random Search (7 hiperparâmetros, 20 combinações) e Bayesiana com Optuna (TPE, 20 tentativas, poda pela mediana dobra a dobra). Regra definida antes: um método novo só substitui o Random Search se ganhar por mais que o desvio entre as dobras.
+- **Alternativas consideradas:** a grade completa (6.561 modelos, ~35 h); escolher pelo resultado na validação (com 94 fraudes, o modelo padrão ficaria em primeiro, 0,891, por ruído).
+- **Consequência:** Grid 0,837 ± 0,069 (54 modelos, 17,2 min), Random 0,841 ± 0,062 (60 modelos, 26,7 min) e Bayesiana 0,842 ± 0,064 (40 modelos, 15,6 min; 10 de 20 tentativas podadas, todas depois da 1ª dobra). O ganho da Bayesiana (+0,0009) é cerca de 1/70 do desvio: o Random Search continua, e o modelo, a regra e o app não mudam. Limite da poda: ela decide com base em diferenças pequenas depois da 1ª dobra (menores que o desvio). Depois da última dobra não há poda, porque o custo já foi pago.
+- **Onde está:** `src/otimizacao.py`; itens 7.1 a 7.4 da Fase 03; `metodo_de_busca` na ficha do modelo.
+
+## DA-14 — SLA e plano de retreino
+
+- **Contexto:** o PSI avisa que as entradas mudaram, mas não diz se o modelo piorou; em fraude, o gabarito chega com atraso (contestações).
+- **Decisão:** SLA tirado do bootstrap do teste (limites inferiores do intervalo de 95%): PR-AUC ≥ 0,736 e recall da regra ≥ 0,747, medidos por lote. Gatilhos de retreino por calendário, data drift (PSI > 0,25), concept drift (lote abaixo do SLA) e precisão da fila; troca de modelo com shadow mode, canary e rollback.
+- **Alternativas consideradas:** um SLA fixo arbitrário; retreinar a cada alerta (com 22 fraudes num lote, um alerta isolado é provavelmente ruído); walk-forward completo (não se aplica com 2 dias de dados).
+- **Consequência:** nas últimas 12 h, em lotes de 4 h, PR-AUC de 0,778, 0,837 e 0,734 (o último logo abaixo do SLA) e precisão da fila de 0,20 a 0,36. O PSI de `lim_crt` fica em ~0,58 nos três lotes sem derrubar a PR-AUC: data drift nem sempre é queda de desempenho. Retreinar com 2 lotes seguidos abaixo do SLA.
+- **Onde está:** `src/monitoramento.py` (`relatorio_drift`, `painel_lotes`); item 3 da Fase 05; `monitoramento` na ficha do modelo (SLA de PR-AUC e de recall); aba **📡 Monitoramento** do app, que lê o SLA da ficha.

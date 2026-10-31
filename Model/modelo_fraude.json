@@ -1,5 +1,5 @@
 {
-  "data_treino": "2026-10-24 14:13",
+  "data_treino": "2026-10-31 07:51",
   "modelo": "XGBoost ajustado, com peso da classe",
   "arquivo": "modelo_fraude.pkl",
   "treinado_com": "226.980 transações (treino + validação), 378 fraudes",
@@ -60,6 +60,21 @@
     "n_estimators": 454.0,
     "scale_pos_weight": 24.462604401095707,
     "subsample": 0.7975182385457563
+  },
+  "metodo_de_busca": "Random Search",
+  "monitoramento": {
+    "sla_pr_auc_minima": 0.736,
+    "sla_recall_minimo": 0.747,
+    "psi_alerta": 0.25,
+    "variaveis": [
+      "score do modelo",
+      "crt",
+      "cep",
+      "reclamacoes",
+      "lim_crt",
+      "hist_saldo",
+      "hora_do_dia"
+    ]
   },
   "metricas_teste": {
     "Precisão": 0.5909,

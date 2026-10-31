@@ -15,5 +15,5 @@ jobs:
         with:
           python-version: '3.12'
       # Os testes usam src/ e abrem o app Streamlit (AppTest), que carrega o modelo salvo em Model/
-      - run: pip install pandas numpy scipy scikit-learn xgboost lightgbm imbalanced-learn joblib matplotlib seaborn streamlit pytest
+      - run: pip install pandas numpy scipy scikit-learn xgboost lightgbm imbalanced-learn joblib matplotlib seaborn streamlit optuna pytest
       - run: pytest -v
