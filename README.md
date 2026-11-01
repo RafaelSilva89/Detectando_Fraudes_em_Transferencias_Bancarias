@@ -287,6 +287,23 @@ streamlit run app.py
 | Resultado no teste | RF: F1 de 86,03%, recall de 78,57% | XGBoost: recall de **82,1%**, **82,3%** do valor barrado, economia de **R$ 11.494,24** |
 | Entrega | Notebook + `.pkl` | Notebook + pipeline e ficha JSON + app com aba de monitoramento + 24 testes com CI + registro de decisões |
 
+### 📊 Resultado: v1 × v2
+
+Métricas da classe **fraude**, no teste:
+
+| Métrica | v1 (Random Forest, limiar 0,50) | v2 (XGBoost, limiar 0,50) | v2 (regra final) |
+|---|---|---|---|
+| Precisão | 95,06% | **96,05%** | 59,09% |
+| Recall (fraudes encontradas) | 78,57% | 76,84% | **82,11%** |
+| F1 | **86,03%** | 85,38% | 68,72% |
+| PR-AUC | não calculada | 0,817 | 0,817 |
+| Valor das fraudes barrado | não calculado | 74,2% | **82,3%** |
+| Economia líquida | não calculada | R$ 10.574,71 | **R$ 11.494,24** |
+
+- ⚖️ **A comparação é justa?** No mesmo limiar (0,50), as duas versões ficam no **mesmo nível** (F1 de 86,03% e 85,38%), e o da v1 é um pouco otimista: a base tinha 1.081 duplicatas, e parte do teste tinha cópia no treino. Os "100% em tudo" do LightGBM da v1 eram vazamento (avaliado nos dados de treino).
+- 🎯 **Por que o F1 da regra final é menor:** a regra troca F1 por dinheiro, de propósito. Ela encontra mais fraudes (**82,1%**) e barra mais valor (**82,3%**), em troca de mais revisões a R$ 5 cada. No bootstrap, economiza mais que o limiar 0,50 em **88%** das amostras.
+- 🏆 **Veredito:** v2. Avaliação honesta, a mesma qualidade de ranking, resultado em reais e limiar escolhido sem olhar o teste.
+
 ## 12. Insights
 
 1. **A acurácia engana:** "nunca é fraude" acerta 99,83%. A PR-AUC e o resultado em reais são as medidas certas.
