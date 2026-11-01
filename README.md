@@ -109,7 +109,7 @@ cd Detectando_Fraudes_em_Transferencias_Bancarias
 # 2. Instalar as dependências
 pip install -r requirements.txt
 
-# 3. Abrir o notebook (a execução completa leva cerca de 40 minutos)
+# 3. Abrir o notebook (a execução completa leva cerca de 1h30; veja o tempo de cada etapa abaixo)
 jupyter notebook "Notebooks/Detectando Fraudes em Transferências Bancárias - v2.ipynb"
 
 # 4. Abrir o app
@@ -118,6 +118,27 @@ streamlit run app.py
 # 5. Rodar os testes
 pytest
 ```
+
+### ⏱️ Tempo de execução do notebook
+
+A execução completa leva **cerca de 1h30**. Tempo de cada etapa:
+
+| Etapa | Tempo |
+|---|---|
+| Fases 01 e 02: leitura, duplicatas, outliers e hipóteses | 1,0 min |
+| Fase 03: balanceamento e seleção de variáveis | 6,4 min |
+| Fase 03: comparação dos modelos (validação cruzada) | ~10 min |
+| Fase 03: 7.1 Grid Search | 17,2 min |
+| Fase 03: 7.2 Random Search | 26,7 min |
+| Fase 03: 7.3 Otimização Bayesiana (Optuna, com poda) | 15,6 min |
+| Fase 03: comparação dos métodos, modelo final, calibração e regra para valores altos | ~4 min |
+| Fase 04: bootstrap, validação temporal, permutação e SHAP | 3,9 min |
+| Fase 05: modelo de produção, monitoramento e app | 0,2 min |
+| **Total** | **85,5 min** |
+
+A busca de hiperparâmetros (7.1 a 7.3) é 70% do tempo. Com 8 GB de RAM, feche outros programas pesados antes (uma tentativa com o OneDrive sincronizando e outras janelas do VS Code abertas parou por falta de memória).
+
+Medido na execução completa de 31/10/2026, num notebook com Intel Core i3-4005U (2 núcleos, 1,7 GHz) e 8 GB de RAM, com o kernel em Python 3.13. Num computador mais novo o tempo cai bastante, mas a proporção entre as etapas se mantém.
 
 ## 6. Etapas do projeto (CRISP-DM)
 
